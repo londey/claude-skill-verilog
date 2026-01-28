@@ -26,7 +26,7 @@ module counter #(
 
 ## always_ff: Simple Assignments Only
 
-`always_ff` blocks must contain ONLY simple non-blocking assignments. No logic, no expressions - this ensures Verilator simulation matches synthesized behavior. (Exception: memory inference patterns require conditional writes - see Memory Inference section.)
+`always_ff` blocks must contain ONLY simple non-blocking assignments. No logic, no expressions - this ensures Verilator simulation matches synthesized behavior. (Exceptions: memory inference and async reset synchronizers require conditional logic - see those sections.)
 
 ```systemverilog
 // CORRECT - simple assignment
@@ -48,7 +48,7 @@ All combinational logic belongs in `always_comb` blocks:
 
 ```systemverilog
 always_comb begin
-    count_next = count + 1;
+    count_next = count + 8'd1;
     state_next = enable ? RUNNING : IDLE;
 end
 ```
@@ -97,9 +97,9 @@ Testbench structure:
 
 ```systemverilog
 module counter_tb;
-    logic clk = 0;
-    logic rst_n;
-    logic [7:0] count;
+    logic       clk = 1'b0;  // System clock
+    logic       rst_n;       // Active-low reset
+    logic [7:0] count;       // DUT output
 
     counter dut (
         .clk(clk),
@@ -112,8 +112,8 @@ module counter_tb;
     end
 
     initial begin
-        rst_n = 0;
-        #20 rst_n = 1;
+        rst_n = 1'b0;
+        #20 rst_n = 1'b1;
         #100;
         $display("Test complete, count=%d", count);
         $finish;
@@ -215,10 +215,15 @@ end
 
 Use synchronous resets when possible. For external async resets, synchronize first.
 
+**Note:** Async reset synchronizers require conditional logic in `always_ff` for the reset condition - this is a necessary exception similar to memory inference.
+
 ```systemverilog
 // Synchronous reset (preferred)
+logic [7:0] count;       // Counter register
+logic [7:0] count_next;  // Next counter value
+
 always_comb begin
-    count_next = rst_n ? count + 1 : '0;
+    count_next = rst_n ? (count + 8'd1) : 8'd0;
 end
 
 always_ff @(posedge clk) begin
@@ -226,12 +231,18 @@ always_ff @(posedge clk) begin
 end
 
 // Reset synchronizer for external async reset
-logic [1:0] rst_sync;
+logic [1:0] rst_sync;       // Synchronizer flip-flops
+logic [1:0] rst_sync_next;  // Next synchronizer value
+
+always_comb begin
+    rst_sync_next = {rst_sync[0], 1'b1};
+end
+
 always_ff @(posedge clk or negedge rst_async_n) begin
     if (!rst_async_n) begin
         rst_sync <= 2'b00;
     end else begin
-        rst_sync <= {rst_sync[0], 1'b1};
+        rst_sync <= rst_sync_next;
     end
 end
 assign rst_n = rst_sync[1];
@@ -248,8 +259,8 @@ typedef enum logic [1:0] {
     DONE
 } state_t;
 
-state_t state;
-state_t state_next;
+state_t state;       // Current state register
+state_t state_next;  // Next state value
 
 // Next-state logic (combinational)
 always_comb begin
@@ -286,11 +297,16 @@ Single-bit signals: use 2-FF synchronizer. Multi-bit: use gray coding or handsha
 
 ```systemverilog
 // 2-FF synchronizer for single-bit CDC
-logic [1:0] sync_reg;
-logic       signal_sync;
+logic [1:0] sync_reg;       // Synchronizer flip-flops
+logic [1:0] sync_reg_next;  // Next synchronizer value
+logic       signal_sync;    // Synchronized output
+
+always_comb begin
+    sync_reg_next = {sync_reg[0], signal_src};
+end
 
 always_ff @(posedge clk_dst) begin
-    sync_reg <= {sync_reg[0], signal_src};
+    sync_reg <= sync_reg_next;
 end
 assign signal_sync = sync_reg[1];
 
@@ -308,7 +324,7 @@ Use standard patterns for RAM/ROM inference by synthesis tools.
 
 ```systemverilog
 // Single-port RAM
-logic [DATA_WIDTH-1:0] mem [0:DEPTH-1];
+logic [DATA_WIDTH-1:0] mem [0:DEPTH-1];  // Memory array
 
 always_ff @(posedge clk) begin
     if (we) begin
@@ -318,7 +334,7 @@ always_ff @(posedge clk) begin
 end
 
 // ROM (initialized memory)
-logic [7:0] rom [0:255];
+logic [7:0] rom [0:255];  // ROM array
 initial $readmemh("rom_data.hex", rom);
 
 always_ff @(posedge clk) begin
