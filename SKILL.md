@@ -248,7 +248,8 @@ typedef enum logic [1:0] {
     DONE
 } state_t;
 
-state_t state, state_next;
+state_t state;
+state_t state_next;
 
 // Next-state logic (combinational)
 always_comb begin
