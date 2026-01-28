@@ -1,3 +1,9 @@
+---
+name: londey-verilog-guidance
+trigger: "**/*.{v,sv,vh,svh}"
+description: Verilog/SystemVerilog coding style and Verilator workflow guidance
+---
+
 # Verilog/SystemVerilog Guidance
 
 Apply when working with `.v`, `.sv`, `.vh`, `.svh` files or running Verilator.
