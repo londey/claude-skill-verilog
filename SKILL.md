@@ -26,7 +26,7 @@ module counter #(
 
 ## always_ff: Simple Assignments Only
 
-`always_ff` blocks must contain ONLY simple non-blocking assignments. No logic, no expressions - this ensures Verilator simulation matches synthesized behavior.
+`always_ff` blocks must contain ONLY simple non-blocking assignments. No logic, no expressions - this ensures Verilator simulation matches synthesized behavior. (Exception: memory inference patterns require conditional writes - see Memory Inference section.)
 
 ```systemverilog
 // CORRECT - simple assignment
@@ -58,6 +58,7 @@ end
 - One declaration per line
 - Explicit bit widths on all literals
 - Start files with `` `default_nettype none ``
+- Always use `begin`/`end` blocks for `if`, `else`, `case` items (prevents bugs when adding code later)
 
 ```systemverilog
 `default_nettype none
@@ -106,7 +107,9 @@ module counter_tb;
         .count(count)
     );
 
-    always #5 clk = ~clk;
+    always begin
+        #5 clk = ~clk;
+    end
 
     initial begin
         rst_n = 0;
@@ -160,3 +163,187 @@ verilator --binary \
 | `--main-top-name "-"` | Remove extra TOP module wrapper |
 | `--x-assign unique` | Replace X with random constant per-build |
 | `--x-initial unique` | Randomly initialize uninitialized variables |
+
+## Module Instantiation
+
+- One module per file, filename matches module name
+- Always use named port connections (never positional)
+
+```systemverilog
+// CORRECT - named connections
+counter #(
+    .WIDTH(16)
+) u_counter (
+    .clk    (clk),
+    .rst_n  (rst_n),
+    .count  (count_value)
+);
+
+// WRONG - positional connections
+counter u_counter (clk, rst_n, count_value);
+```
+
+## Avoiding Latches
+
+Latches are inferred when signals aren't assigned in all paths. Prevent with:
+
+- Default assignments at start of `always_comb`
+- Use `unique case` or `priority case`
+- Cover all cases including `default`
+
+```systemverilog
+always_comb begin
+    // Default assignments first
+    data_next = data_reg;
+    valid_next = 1'b0;
+
+    unique case (state)
+        IDLE: begin
+            data_next = 8'd0;
+        end
+        LOAD: begin
+            data_next = data_in;
+        end
+        default: begin
+            data_next = data_reg;
+        end
+    endcase
+end
+```
+
+## Reset Handling
+
+Use synchronous resets when possible. For external async resets, synchronize first.
+
+```systemverilog
+// Synchronous reset (preferred)
+always_comb begin
+    count_next = rst_n ? count + 1 : '0;
+end
+
+always_ff @(posedge clk) begin
+    count <= count_next;
+end
+
+// Reset synchronizer for external async reset
+logic [1:0] rst_sync;
+always_ff @(posedge clk or negedge rst_async_n) begin
+    if (!rst_async_n) begin
+        rst_sync <= 2'b00;
+    end else begin
+        rst_sync <= {rst_sync[0], 1'b1};
+    end
+end
+assign rst_n = rst_sync[1];
+```
+
+## FSM Patterns
+
+Separate state register from next-state logic. Use enums for state encoding.
+
+```systemverilog
+typedef enum logic [1:0] {
+    IDLE,
+    RUN,
+    DONE
+} state_t;
+
+state_t state, state_next;
+
+// Next-state logic (combinational)
+always_comb begin
+    state_next = state;
+    unique case (state)
+        IDLE: begin
+            if (start) begin
+                state_next = RUN;
+            end
+        end
+        RUN: begin
+            if (finish) begin
+                state_next = DONE;
+            end
+        end
+        DONE: begin
+            state_next = IDLE;
+        end
+        default: begin
+            state_next = IDLE;
+        end
+    endcase
+end
+
+// State register (sequential)
+always_ff @(posedge clk) begin
+    state <= state_next;
+end
+```
+
+## Clock Domain Crossing (CDC)
+
+Single-bit signals: use 2-FF synchronizer. Multi-bit: use gray coding or handshake.
+
+```systemverilog
+// 2-FF synchronizer for single-bit CDC
+logic [1:0] sync_reg;
+logic       signal_sync;
+
+always_ff @(posedge clk_dst) begin
+    sync_reg <= {sync_reg[0], signal_src};
+end
+assign signal_sync = sync_reg[1];
+
+// Gray code for multi-bit counters crossing domains
+function automatic logic [WIDTH-1:0] bin2gray(input logic [WIDTH-1:0] bin);
+    return bin ^ (bin >> 1);
+endfunction
+```
+
+## Memory Inference
+
+Use standard patterns for RAM/ROM inference by synthesis tools.
+
+**Note:** Memory patterns are an exception to the "simple assignments only" rule for `always_ff`. Synthesis tools require these specific patterns to correctly infer RAM/ROM primitives.
+
+```systemverilog
+// Single-port RAM
+logic [DATA_WIDTH-1:0] mem [0:DEPTH-1];
+
+always_ff @(posedge clk) begin
+    if (we) begin
+        mem[addr] <= wdata;
+    end
+    rdata <= mem[addr];
+end
+
+// ROM (initialized memory)
+logic [7:0] rom [0:255];
+initial $readmemh("rom_data.hex", rom);
+
+always_ff @(posedge clk) begin
+    rdata <= rom[addr];
+end
+```
+
+## Assertions (SVA)
+
+Use assertions for verification. They're enabled with `--assert` in Verilator.
+
+```systemverilog
+// Immediate assertion
+always_comb begin
+    assert (count < MAX_COUNT) else $error("Count overflow");
+end
+
+// Concurrent assertions
+property p_valid_handshake;
+    @(posedge clk) disable iff (!rst_n)
+    valid |-> ##[1:3] ready;
+endproperty
+
+assert property (p_valid_handshake)
+    else $error("Handshake timeout");
+
+// Cover property (for functional coverage)
+cover property (@(posedge clk) state == DONE);
+```
