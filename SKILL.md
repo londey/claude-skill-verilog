@@ -59,12 +59,14 @@ always_comb begin
 end
 ```
 
-## Declarations
+## Formatting
 
+- One statement per line — never chain multiple statements or assignments on a single line
 - One declaration per line
 - Explicit bit widths on all literals
 - Start files with `` `default_nettype none ``
 - Always use `begin`/`end` blocks for `if`, `else`, `case` items (prevents bugs when adding code later)
+- Prefer to keep modules under ~500 lines; if a module grows significantly larger, consider refactoring into smaller sub-modules
 
 ```systemverilog
 `default_nettype none
