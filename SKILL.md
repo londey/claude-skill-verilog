@@ -102,6 +102,39 @@ endmodule
 `default_nettype wire
 ```
 
+## Yosys Synthesis Compatibility (DD-034)
+
+All synthesizable RTL must work with both **Verilator** (lint/simulation) and **Yosys** (ECP5 synthesis).
+Yosys supports a subset of SystemVerilog via `read_verilog -sv`.
+Code that passes Verilator may still fail Yosys synthesis.
+
+**Constructs to avoid in synthesizable RTL:**
+
+| Avoid | Use instead |
+|-------|-------------|
+| `return <expr>;` in functions | `function_name = <expr>;` (Verilog-2005 style) |
+| `interface` / `modport` | Explicit port lists |
+| `unique case` / `priority case` | Plain `case` with `default` |
+| Multi-dimensional packed arrays in ports | Flatten to single vectors |
+
+```systemverilog
+// CORRECT - Yosys-compatible function
+function automatic logic [7:0] add_saturate(input logic [7:0] a, input logic [7:0] b);
+    logic [8:0] sum;
+    sum = {1'b0, a} + {1'b0, b};
+    add_saturate = sum[8] ? 8'hFF : sum[7:0];
+endfunction
+
+// WRONG - return statement (Yosys rejects this)
+function automatic logic [7:0] add_saturate(input logic [7:0] a, input logic [7:0] b);
+    logic [8:0] sum;
+    sum = {1'b0, a} + {1'b0, b};
+    return sum[8] ? 8'hFF : sum[7:0];
+endfunction
+```
+
+Always verify with `make synth` (not just `verilator --lint-only`) when using SystemVerilog features.
+
 ## Testing with Verilator
 
 Every module requires a testbench. Build and run with Verilator:
@@ -209,7 +242,6 @@ counter u_counter (clk, rst_n, count_value);
 Latches are inferred when signals aren't assigned in all paths. Prevent with:
 
 - Default assignments at start of `always_comb`
-- Use `unique case` or `priority case`
 - Cover all cases including `default`
 
 ```systemverilog
@@ -218,7 +250,7 @@ always_comb begin
     data_next = data_reg;
     valid_next = 1'b0;
 
-    unique case (state)
+    case (state)
         IDLE: begin
             data_next = 8'd0;
         end
@@ -286,7 +318,7 @@ state_t state_next;  // Next state value
 // Next-state logic (combinational)
 always_comb begin
     state_next = state;
-    unique case (state)
+    case (state)
         IDLE: begin
             if (start) begin
                 state_next = RUN;
@@ -333,7 +365,7 @@ assign signal_sync = sync_reg[1];
 
 // Gray code for multi-bit counters crossing domains
 function automatic logic [WIDTH-1:0] bin2gray(input logic [WIDTH-1:0] bin);
-    return bin ^ (bin >> 1);
+    bin2gray = bin ^ (bin >> 1);
 endfunction
 ```
 
