@@ -1,6 +1,5 @@
 ---
-name: londey-verilog-guidance
-trigger: "**/*.{v,sv,vh,svh}"
+name: claude-skill-verilog
 description: Verilog/SystemVerilog coding style and Verilator workflow guidance
 ---
 
