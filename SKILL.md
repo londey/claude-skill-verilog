@@ -23,6 +23,20 @@ module counter #(
 );
 ```
 
+## Fixed-Point Notation
+
+Document all fixed-point values using TI-style Q notation:
+- `Qm.n` — signed: m integer bits (including sign bit), n fractional bits, total width = m + n bits.
+- `UQm.n` — unsigned: m integer bits, n fractional bits, total width = m + n bits.
+
+Use Q notation in signal comments, localparam descriptions, and module-level documentation.
+
+```systemverilog
+logic signed [15:0] attr_val;      // Interpolated attribute, Q4.12
+logic        [15:0] depth;         // Fragment depth, UQ16.0
+logic signed [15:0] deriv_dx;      // dAttr/dx per scanline step, Q4.12
+```
+
 ## Naming Conventions
 
 - Active-low signals: use `_n` suffix (e.g., `rst_n`, `chip_select_n`)
