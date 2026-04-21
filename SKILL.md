@@ -26,26 +26,27 @@ module counter #(
 ## Fixed-Point Notation
 
 Document all fixed-point values using TI-style Q notation:
-- `Qm.n` — signed: m integer bits (including sign bit), n fractional bits, total width = m + n bits.
-- `UQm.n` — unsigned: m integer bits, n fractional bits, total width = m + n bits.
+
+* `Qm.n` — signed: m integer bits (including sign bit), n fractional bits, total width = m + n bits.
+* `UQm.n` — unsigned: m integer bits, n fractional bits, total width = m + n bits.
 
 Use Q notation in signal comments, localparam descriptions, and module-level documentation.
 
 ```systemverilog
-logic signed [15:0] attr_val;      // Interpolated attribute, Q4.12
-logic        [15:0] depth;         // Fragment depth, UQ16.0
-logic signed [15:0] deriv_dx;      // dAttr/dx per scanline step, Q4.12
+logic signed [15:0] scale_factor;  // Scaling multiplier, Q4.12
+logic        [15:0] timer_count;   // Free-running tick counter, UQ16.0
+logic signed [15:0] delta;         // Sample-to-sample difference, Q4.12
 ```
 
 ## Naming Conventions
 
-- Active-low signals: use `_n` suffix (e.g., `rst_n`, `chip_select_n`)
-- Clocks: `clk` or `clk_<domain>`
-- Use descriptive names over abbreviations
+* Active-low signals: use `_n` suffix (e.g., `rst_n`, `chip_select_n`)
+* Clocks: `clk` or `clk_<domain>`
+* Use descriptive names over abbreviations
 
 ## always_ff: Simple Assignments Only
 
-`always_ff` blocks must contain ONLY simple non-blocking assignments. No logic, no expressions - this ensures Verilator simulation matches synthesized behavior. (Exceptions: memory inference and async reset synchronizers require conditional logic - see those sections.)
+`always_ff` blocks must contain ONLY simple non-blocking assignments. No logic, no expressions — this ensures Verilator simulation matches synthesized behavior. (Exceptions: memory inference and async reset synchronizers require conditional logic — see those sections.)
 
 ```systemverilog
 // CORRECT - simple assignment
@@ -56,7 +57,7 @@ end
 
 // WRONG - logic in always_ff
 always_ff @(posedge clk) begin
-    count <= count + 1;           // Move to always_comb
+    count <= count + 1;                // Move to always_comb
     state <= enable ? RUNNING : IDLE;  // Move to always_comb
 end
 ```
@@ -74,12 +75,12 @@ end
 
 ## Formatting
 
-- One statement per line — never chain multiple statements or assignments on a single line
-- One declaration per line
-- Explicit bit widths on all literals
-- Start files with `` `default_nettype none ``
-- Always use `begin`/`end` blocks for `if`, `else`, `case` items (prevents bugs when adding code later)
-- Prefer to keep modules under ~500 lines; if a module grows significantly larger, consider refactoring into smaller sub-modules
+* One statement per line — never chain multiple statements or assignments on a single line
+* One declaration per line
+* Explicit bit widths on all literals
+* Start files with `` `default_nettype none ``
+* Always use `begin`/`end` blocks for `if`, `else`, `case` items (prevents bugs when adding code later)
+* Prefer to keep modules under ~500 lines; if a module grows significantly larger, consider refactoring into smaller sub-modules
 
 ```systemverilog
 `default_nettype none
@@ -102,16 +103,16 @@ endmodule
 `default_nettype wire
 ```
 
-## Yosys Synthesis Compatibility (DD-034)
+## Yosys Synthesis Compatibility
 
-All synthesizable RTL must work with both **Verilator** (lint/simulation) and **Yosys** (ECP5 synthesis).
+Synthesizable RTL should work with both **Verilator** (lint/simulation) and **Yosys** (synthesis for open-source FPGA flows).
 Yosys supports a subset of SystemVerilog via `read_verilog -sv`.
 Code that passes Verilator may still fail Yosys synthesis.
 
 **Constructs to avoid in synthesizable RTL:**
 
 | Avoid | Use instead |
-|-------|-------------|
+| --- | --- |
 | `return <expr>;` in functions | `function_name = <expr>;` (Verilog-2005 style) |
 | `interface` / `modport` | Explicit port lists |
 | `unique case` / `priority case` | Plain `case` with `default` |
@@ -133,13 +134,13 @@ function automatic logic [7:0] add_saturate(input logic [7:0] a, input logic [7:
 endfunction
 ```
 
-Always verify with `make synth` (not just `verilator --lint-only`) when using SystemVerilog features.
+Always verify with the actual synthesis flow (e.g. `yosys -p "synth_ecp5 ..."`, `yosys -p "synth_ice40 ..."`, or the project's build target), not only `verilator --lint-only`, when using SystemVerilog features. Lint-clean does not imply synthesizable.
 
 ## Testing with Verilator
 
 Every module requires a testbench. Build and run with Verilator:
 
-```bash
+```sh
 # Build testbench
 verilator --binary -Wall module_tb.sv module.sv
 
@@ -179,18 +180,18 @@ endmodule
 
 Run linting on all files and fix all warnings:
 
-```bash
+```sh
 verilator --lint-only -Wall module.sv
 ```
 
-- Fix all warnings - do not suppress with pragmas
-- Key warnings: WIDTH (bit-width mismatch), UNUSED, UNDRIVEN
+* Fix all warnings — do not suppress with pragmas
+* Key warnings: WIDTH (bit-width mismatch), UNUSED, UNDRIVEN
 
 ## Verilator Simulation Flags
 
 Recommended flags for simulation builds:
 
-```bash
+```sh
 verilator --binary \
     -Wall \
     -Wno-fatal \
@@ -206,7 +207,7 @@ verilator --binary \
 ```
 
 | Flag | Purpose |
-| ---- | ------- |
+| --- | --- |
 | `-Wall` | Enable all warnings |
 | `-Wno-fatal` | Don't exit on warnings (allows full report) |
 | `-j 0` | Fully parallelized compilation |
@@ -220,8 +221,8 @@ verilator --binary \
 
 ## Module Instantiation
 
-- One module per file, filename matches module name
-- Always use named port connections (never positional)
+* One module per file, filename matches module name
+* Always use named port connections (never positional)
 
 ```systemverilog
 // CORRECT - named connections
@@ -241,8 +242,8 @@ counter u_counter (clk, rst_n, count_value);
 
 Latches are inferred when signals aren't assigned in all paths. Prevent with:
 
-- Default assignments at start of `always_comb`
-- Cover all cases including `default`
+* Default assignments at start of `always_comb`
+* Cover all cases including `default`
 
 ```systemverilog
 always_comb begin
@@ -268,7 +269,7 @@ end
 
 Use synchronous resets when possible. For external async resets, synchronize first.
 
-**Note:** Async reset synchronizers require conditional logic in `always_ff` for the reset condition - this is a necessary exception similar to memory inference.
+**Note:** Async reset synchronizers require conditional logic in `always_ff` for the reset condition — this is a necessary exception similar to memory inference.
 
 ```systemverilog
 // Synchronous reset (preferred)
